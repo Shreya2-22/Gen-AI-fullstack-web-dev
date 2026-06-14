@@ -26,7 +26,9 @@ const interviewReportSchema = z.object({
         day: z.number(),
         focus: z.string(),
         tasks: z.array(z.string())
-    }))
+    })),
+    title: z.string()
+
 });
 
 async function generateInterViewReport({ resume, selfDescription, jobDescription }) {
