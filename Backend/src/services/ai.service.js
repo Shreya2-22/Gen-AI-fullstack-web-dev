@@ -1,6 +1,7 @@
 const Groq = require("groq-sdk");
 const { z } = require("zod");
 const { zodResponseFormat } = require("openai/helpers/zod");
+const puppeteer = require("puppeteer");
 
 const groq = new Groq({
     apiKey: process.env.GROQ_API_KEY
@@ -28,10 +29,13 @@ const interviewReportSchema = z.object({
         tasks: z.array(z.string())
     })),
     title: z.string()
-
 });
 
-async function generateInterViewReport({ resume, selfDescription, jobDescription }) {
+const resumePdfSchema = z.object({
+    htmlContent: z.string().describe("The HTML content of the resume")
+});
+
+async function generateInterviewReport({ resume, selfDescription, jobDescription }) {
     const prompt = `Generate an interview report for a candidate with the following details:
 Resume: ${resume}
 Self Description: ${selfDescription}
@@ -57,4 +61,34 @@ Provide:
     return result;
 }
 
-module.exports = { generateInterViewReport };
+async function generatePdfFromHtml(htmlContent) {
+    const browser = await puppeteer.launch();
+    const page = await browser.newPage();
+    await page.setContent(htmlContent, { waitUntil: "networkidle0" });
+    const pdfBuffer = await page.pdf({ format: "A4" });
+    await browser.close();
+    return pdfBuffer;
+}
+
+async function generateResumePdf({ resume, selfDescription, jobDescription }) {
+    const prompt = `Generate a resume PDF for a candidate with the following details:
+Resume: ${resume}
+Self Description: ${selfDescription}
+Job Description: ${jobDescription}
+
+Return a JSON object with a single field "htmlContent" containing the full HTML of the resume, styled and ready to be converted to PDF.`;
+
+    const response = await groq.chat.completions.create({
+        model: "openai/gpt-oss-120b",
+        messages: [
+            { role: "user", content: prompt }
+        ],
+        response_format: zodResponseFormat(resumePdfSchema, "resume_pdf")
+    });
+
+    const jsonContent = JSON.parse(response.choices[0].message.content);
+    const pdfBuffer = await generatePdfFromHtml(jsonContent.htmlContent);
+    return pdfBuffer;
+}
+
+module.exports = { generateInterviewReport, generateResumePdf, generatePdfFromHtml };
